@@ -44,74 +44,12 @@ def word_position(string, subStr, findCnt):
         return "not find"
     return len(string)-len(listStr[-1])-len(subStr)
 
-def countcommand(time_stamp, ib_path, id, count):
-    ib = ib_path +  id + "_" + time_stamp
-
-    # list the incremental backup add file
-    with os.popen("find " + ib + "/Add/ -type f") as f:
-        add_flist = f.readlines()
-
-    # list the incremental backup modify file
-    with os.popen("find " + ib + "/Modify/ -type f") as f:
-        modify_flist = f.readlines()
-
-    # # list the incremental backup add folder
-    # with os.popen("find " + ib + "/Add/ -type d") as f:
-    #     add_dlist = f.readlines() 
-        
-    # # list the full backup folder
-    # with os.popen("find " + dir_path + " -type d") as f:
-    #     tar_dlist = f.readlines()
-
-    # if have new file, copy it to recovery folder and write it to the dockerfile
-    for i in range(len(add_flist)):
-        # get the current file copy destination path
-        i_position = word_position(add_flist[i], "/", 9)
-        slash_cnt = add_flist[i].count("/")
-        i_secposition = word_position(add_flist[i], "/", slash_cnt)
-
-        # get the previous file copy destination path
-        previousi_position = word_position(add_flist[i-1], "/", 9)
-        slash_seccnt = add_flist[i-1].count("/")
-        previousi_secposition = word_position(add_flist[i-1], "/", slash_seccnt)
-
-        if len(add_flist) == 1:
-            count += 1
-        elif len(add_flist) != 1 and i == 0:
-            count = count + 1 
-        elif len(add_flist) != 1 and i == len(add_flist)-1:
-            if add_flist[i][i_position:i_secposition] == add_flist[i-1][previousi_position:previousi_secposition]:
-                continue
-            elif add_flist[i][i_position:i_secposition] != add_flist[i-1][previousi_position:previousi_secposition]: 
-                count += 1
-        else:
-            if add_flist[i][i_position:i_secposition] == add_flist[i-1][previousi_position:previousi_secposition]:
-                continue
-            elif add_flist[i][i_position:i_secposition] != add_flist[i-1][previousi_position:previousi_secposition]: 
-                count += 1
-    return count
-
 def incremental_backup(container, id, conimg, time_stamp, big, ib_path):
     # define the diff list
     fs_diffadd = []
     fs_diffdelete = []
     fs_diffmodify = []
-
-    # export the container to tarfile
-    container_tararchive = container.export()
-    container_tar = ib_path + id + "_" + conimg + "_" + time_stamp + ".tar"
-    container_dir = ib_path + id + "_" + conimg + "_" + time_stamp
-    with open(container_tar, mode = 'wb') as img_tar:
-        for chunk in container_tararchive:
-            img_tar.write(chunk)
-
-    # untar file 
-    try:
-        tar = tarfile.open(container_tar)  
-        tar.extractall(path=container_dir)  
-        tar.close()
-    except Exception as e:
-        print(e)
+    container_dir = ib_path + id + "_" + conimg + "_" + time_stamp + "_IB"
 
     image1 = "daemon://" + conimg + ":" + str(big)
     image2 = "daemon://" + conimg + ":" + time_stamp
@@ -131,47 +69,38 @@ def incremental_backup(container, id, conimg, time_stamp, big, ib_path):
     container_IB = ib_path + id + "_" + conimg + "_" + time_stamp + "_IB/"
     os.mkdir(container_IB)
     os.mkdir(container_IB + "Add")
-    os.mkdir(container_IB + "Delete")
-    os.mkdir(container_IB + "Modify")
-
-    folder_list, folder_sh = copy_alldir(id + "_" + conimg + "_" + time_stamp, id + "_" + conimg + "_" + time_stamp + "_IB", ib_path)
+    # os.mkdir(container_IB + "Delete")
+    # os.mkdir(container_IB + "Modify")
 
     # backup the add file
-    for i in range(len(fs_diffadd)):
-        if os.path.isdir(container_dir + fs_diffadd[i]) == True:
-            pass
-        else:
-            shutil.copy(container_dir + fs_diffadd[i], container_IB + "Add" + fs_diffadd[i])  
-    # back the delete file
-    os.mknod(container_IB + "Delete/delete_list.txt")
-    for i in range(len(fs_diffdelete)):
-        try:
-            delete_fp = open(container_IB + "Delete/delete_list.txt", "a")
-            delete_fp.writelines(fs_diffdelete[i] + "\n")
-        except IOError as e:
-            print(e) 
-    # backup the modify file
-    for i in range(len(fs_diffmodify)):
-        if os.path.isdir(container_dir + fs_diffmodify[i]) == True:
-            pass
-        else:
-            shutil.copy(container_dir + fs_diffmodify[i], container_IB + "Modify" + fs_diffmodify[i]) 
-    # print(fs_diffadd,fs_diffdelete,fs_diffmodify)
+    for add in fs_diffadd:
+        # if os.path.isdir(container_dir + fs_diffadd[i]) == True:
+        #     pass
+        # else:
+        add_cmd = "sudo docker cp -a -L " + id + ":" + add + " " + container_IB + "Add"
+        print(add_cmd)
+        os.popen(add_cmd)
+        print(add)
+        
+    # # back the delete file
+    # os.mknod(container_IB + "Delete/delete_list.txt")
+    # for i in range(len(fs_diffdelete)):
+    #     try:
+    #         delete_fp = open(container_IB + "Delete/delete_list.txt", "a")
+    #         delete_fp.writelines(fs_diffdelete[i] + "\n")
+    #     except IOError as e:
+    #         print(e) 
+    #     # backup the add file
+    # for modify in fs_diffmodify:
+    #     save_tar = modify
+    #     f = open(save_tar, "wb")
+    #     bits, stat = container.get_archive(modify)
 
-    # remove the image tar file
-    try:
-        shutil.rmtree(container_dir)
-        os.remove(folder_list)
-        os.remove(folder_sh)
-        os.remove(container_tar)
-    except OSError as e:
-        print(e)
-
-    os.rename(ib_path + id + "_" + conimg + "_" + time_stamp + "_IB/" , ib_path + id + "_" + conimg + "_" + time_stamp )
-            
-
+    #     for chunk in bits:
+    #         f.write(chunk)
+    #         f.close()
+ 
 def backup():
-    client = docker.from_env()
     # get all container id
     cmd_conid = os.popen("sudo docker ps -a -q")
     result_conid = cmd_conid.readlines()
@@ -229,9 +158,9 @@ def backup():
         else:
             # get the latest incremental backup timestamp
             for i in range(len(ib_backuplist)):
-                big = int(ib_backuplist[i][-10:])
-                if big < int(ib_backuplist[i][-10:]):
-                    big == int(ib_backuplist[i][-10:])
+                big = int(ib_backuplist[i][-13:-3])
+                if big < int(ib_backuplist[i][-13:-3]):
+                    big == int(ib_backuplist[i][-13:-3])
                 else:
                     pass  
 
@@ -240,24 +169,6 @@ def backup():
 
             # remove image
             client.images.remove(conimg + ":" + str(big))
-
-        # dockerfile limit
-        dockerfile_commandcount = 0 
-        ## get the incremental backup list and sort it
-        ib_sort = []
-        ib_dirlist = os.listdir(backup_path + id + "_" + conimg + "/incremental_backup/")
-        for i in ib_dirlist:
-            ib_sort.append(i[-10:])
-        ib_sort.sort()
-        ## count the dockerfile command
-        for i in ib_sort:
-            dockerfile_commandcount = countcommand(i, backup_path + id + "_" + conimg + "/incremental_backup/", id + "_" + conimg, dockerfile_commandcount)
-        if dockerfile_commandcount > 120:
-            shutil.rmtree(ib_path)
-            shutil.rmtree(fb_path)
-            os.mkdir(backup_path + id + "_" + conimg + "/incremental_backup") 
-            os.mkdir(backup_path + id + "_" + conimg + "/full_backup")
-            full_backup(container, id, conimg, time_stamp, fb_path)
 
         # avoid the same time_stamp(tag)
         time.sleep(1)

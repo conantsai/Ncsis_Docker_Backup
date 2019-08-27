@@ -170,98 +170,98 @@ def incremental_backup(container, id, conimg, time_stamp, big, ib_path):
     os.rename(ib_path + id + "_" + conimg + "_" + time_stamp + "_IB/" , ib_path + id + "_" + conimg + "_" + time_stamp )
             
 
-def backup():
+def backup(id):
     client = docker.from_env()
-    # get all container id
-    cmd_conid = os.popen("sudo docker ps -a -q")
-    result_conid = cmd_conid.readlines()
-    cmd_conid.close()
+
+    # # get all container id
+    # cmd_conid = os.popen("sudo docker ps -a -q")
+    # result_conid = cmd_conid.readlines()
+    # cmd_conid.close()
 
     backup_path = "/usr/local/Ncsis_Docker_Backup/backup/"
 
-    for id in result_conid:
-        # get the current time 
-        time_stamp = int(time.time())
-        time_stamp = int(time_stamp* (10 ** (10-len(str(time_stamp)))))
-        time_stamp = str(time_stamp)
+    # get the current time 
+    time_stamp = int(time.time())
+    time_stamp = int(time_stamp* (10 ** (10-len(str(time_stamp)))))
+    time_stamp = str(time_stamp)
 
-        # reshap the container -d
-        id = id[:-1]
-        # get the container by container ID.
-        container = client.containers.get(id)
-        # get the container's "image" attribute
-        conimg = container.attrs['Config']['Image']
-        
-        # create a backup folder for the container
-        if os.path.exists(backup_path + id + "_" + conimg ):
-            pass
-        else:
-            os.mkdir(backup_path + id + "_" + conimg)
-            os.mkdir(backup_path + id + "_" + conimg + "/full_backup")  
-            os.mkdir(backup_path + id + "_" + conimg + "/incremental_backup") 
-        
-        fb_path = backup_path + id + "_" + conimg + "/full_backup/"
-        ib_path = backup_path + id + "_" + conimg + "/incremental_backup/"
-        
-        # commit the container to image
-        container.commit(repository=conimg, tag=time_stamp)
+    # reshap the container -d
+    id = id[:-1]
+    # get the container by container ID.
+    container = client.containers.get(id)
+    # get the container's "image" attribute
+    conimg = container.attrs['Config']['Image']
+    
+    # create a backup folder for the container
+    if os.path.exists(backup_path + id + "_" + conimg ):
+        pass
+    else:
+        os.mkdir(backup_path + id + "_" + conimg)
+        os.mkdir(backup_path + id + "_" + conimg + "/full_backup")  
+        os.mkdir(backup_path + id + "_" + conimg + "/incremental_backup") 
+    
+    fb_path = backup_path + id + "_" + conimg + "/full_backup/"
+    ib_path = backup_path + id + "_" + conimg + "/incremental_backup/"
+    
+    # commit the container to image
+    container.commit(repository=conimg, tag=time_stamp)
 
-        # get the full backup timestamp
-        fb_dirlist = os.listdir(fb_path)
-        fb_backuplist = list(filter(lambda x:id + "_" + conimg  in x, fb_dirlist))
+    # get the full backup timestamp
+    fb_dirlist = os.listdir(fb_path)
+    fb_backuplist = list(filter(lambda x:id + "_" + conimg  in x, fb_dirlist))
 
-        # get the incremental backup list
-        ib_dirlist = os.listdir(ib_path)
-        ib_backuplist = list(filter(lambda x:id + "_" + conimg  in x, ib_dirlist))
+    # get the incremental backup list
+    ib_dirlist = os.listdir(ib_path)
+    ib_backuplist = list(filter(lambda x:id + "_" + conimg  in x, ib_dirlist))
 
-        # if the first time backup 
-        if len(fb_backuplist) == 0 and len(ib_backuplist) == 0:
-            # do full backup
-            full_backup(container, id, conimg, time_stamp, fb_path)
-        # if the first time incremental ball
-        elif len(fb_backuplist) == 1 and len(ib_backuplist) == 0:
-            # do incremental backup
-            big = fb_backuplist[0][-14:-4]
-            incremental_backup(container, id, conimg, time_stamp, big, ib_path)
+    # if the first time backup 
+    if len(fb_backuplist) == 0 and len(ib_backuplist) == 0:
+        # do full backup
+        full_backup(container, id, conimg, time_stamp, fb_path)
+    # if the first time incremental ball
+    elif len(fb_backuplist) == 1 and len(ib_backuplist) == 0:
+        # do incremental backup
+        big = fb_backuplist[0][-14:-4]
+        incremental_backup(container, id, conimg, time_stamp, big, ib_path)
 
-            # remove image
-            client.images.remove(conimg + ":" + str(big))
-        else:
-            # get the latest incremental backup timestamp
-            for i in range(len(ib_backuplist)):
-                big = int(ib_backuplist[i][-10:])
-                if big < int(ib_backuplist[i][-10:]):
-                    big == int(ib_backuplist[i][-10:])
-                else:
-                    pass  
+        # remove image
+        client.images.remove(conimg + ":" + str(big))
+    else:
+        # get the latest incremental backup timestamp
+        for i in range(len(ib_backuplist)):
+            big = int(ib_backuplist[i][-10:])
+            if big < int(ib_backuplist[i][-10:]):
+                big == int(ib_backuplist[i][-10:])
+            else:
+                pass  
 
-            # do incremental backup  
-            incremental_backup(container, id, conimg, time_stamp, big, ib_path)
+        # do incremental backup  
+        incremental_backup(container, id, conimg, time_stamp, big, ib_path)
 
-            # remove image
-            client.images.remove(conimg + ":" + str(big))
+        # remove image
+        client.images.remove(conimg + ":" + str(big))
 
-        # dockerfile limit
-        dockerfile_commandcount = 0 
-        ## get the incremental backup list and sort it
-        ib_sort = []
-        ib_dirlist = os.listdir(backup_path + id + "_" + conimg + "/incremental_backup/")
-        for i in ib_dirlist:
-            ib_sort.append(i[-10:])
-        ib_sort.sort()
-        ## count the dockerfile command
-        for i in ib_sort:
-            dockerfile_commandcount = countcommand(i, backup_path + id + "_" + conimg + "/incremental_backup/", id + "_" + conimg, dockerfile_commandcount)
-        if dockerfile_commandcount > 120:
-            shutil.rmtree(ib_path)
-            shutil.rmtree(fb_path)
-            os.mkdir(backup_path + id + "_" + conimg + "/incremental_backup") 
-            os.mkdir(backup_path + id + "_" + conimg + "/full_backup")
-            full_backup(container, id, conimg, time_stamp, fb_path)
+    # dockerfile limit
+    dockerfile_commandcount = 0 
+    ## get the incremental backup list and sort it
+    ib_sort = []
+    ib_dirlist = os.listdir(backup_path + id + "_" + conimg + "/incremental_backup/")
+    for i in ib_dirlist:
+        ib_sort.append(i[-10:])
+    ib_sort.sort()
+    ## count the dockerfile command
+    for i in ib_sort:
+        dockerfile_commandcount = countcommand(i, backup_path + id + "_" + conimg + "/incremental_backup/", id + "_" + conimg, dockerfile_commandcount)
+    if dockerfile_commandcount > 120:
+        shutil.rmtree(ib_path)
+        shutil.rmtree(fb_path)
+        os.mkdir(backup_path + id + "_" + conimg + "/incremental_backup") 
+        os.mkdir(backup_path + id + "_" + conimg + "/full_backup")
+        full_backup(container, id, conimg, time_stamp, fb_path)
 
-        # avoid the same time_stamp(tag)
-        time.sleep(1)
+    # avoid the same time_stamp(tag)
+    time.sleep(1)
 
-if __name__ == "__main__":
-    client = docker.from_env()
-    backup()
+# if __name__ == "__main__":
+#     client = docker.from_env()
+#     backup()
